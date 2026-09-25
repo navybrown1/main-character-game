@@ -263,6 +263,15 @@ function todayKey(now: number = Date.now()): string {
   return `${d.getFullYear()}-${month}-${day}`;
 }
 
+/** Calendar-day key for the day before `now`. Uses date-field arithmetic
+ *  (not minus-24-hours) so daylight-saving transitions, where a day is 23
+ *  or 25 hours long, still land on the right local calendar date. */
+function prevDayKey(now: number = Date.now()): string {
+  const d = new Date(now);
+  d.setDate(d.getDate() - 1);
+  return todayKey(d.getTime());
+}
+
 function checkAchievements(state: GameState): Achievement[] {
   const earned = new Set(state.player.achievements);
   const fresh: Achievement[] = [];
@@ -343,7 +352,7 @@ export function completeMission(prev: GameState, missionId: string, now: number 
   const today = todayKey(now);
   const last = state.player.lastActiveDate;
   if (last !== today) {
-    const yesterday = todayKey(now - 24 * 60 * 60 * 1000);
+    const yesterday = prevDayKey(now);
     state.player.streak = last === yesterday ? state.player.streak + 1 : 1;
     state.player.lastActiveDate = today;
   }
