@@ -32,6 +32,9 @@ export interface PlayerState {
   splashSeen: boolean;
   missionsCompleted: number;
   bossesSlain: number;
+  /** Monotonically increasing save sequence, stamped by the persistence layer.
+   *  Used on load to keep whichever copy (cloud or local) is newer. */
+  saveSeq: number;
 }
 
 export interface GameState {
@@ -242,6 +245,7 @@ export function defaultPlayerState(): PlayerState {
     splashSeen: false,
     missionsCompleted: 0,
     bossesSlain: 0,
+    saveSeq: 0,
   };
 }
 
@@ -249,8 +253,14 @@ export function defaultGameState(): GameState {
   return { player: defaultPlayerState(), missions: {}, intel: {} };
 }
 
+/** Calendar-day key in the player's local timezone (not UTC), so streaks
+ *  count real local days: completions on either side of UTC midnight used to
+ *  increment a streak twice in one local day or miss it across a local one. */
 function todayKey(now: number = Date.now()): string {
-  return new Date(now).toISOString().slice(0, 10);
+  const d = new Date(now);
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${month}-${day}`;
 }
 
 function checkAchievements(state: GameState): Achievement[] {
@@ -285,10 +295,29 @@ function checkAchievements(state: GameState): Achievement[] {
   return fresh;
 }
 
-/** Mark a mission complete. Mutates a deep-ish copy and returns it with events. */
+/** Mark a mission complete. Mutates a deep-ish copy and returns it with events.
+ *  Idempotent: completing an already-done mission returns the state unchanged
+ *  with zeroed events, so a double click can never award rewards twice. */
 export function completeMission(prev: GameState, missionId: string, now: number = Date.now()): { state: GameState; events: CompletionEvents } {
   const mission = MISSIONS.find((m) => m.id === missionId);
   if (!mission) throw new Error(`Unknown mission: ${missionId}`);
+
+  if (prev.missions[missionId]?.status === 'done') {
+    const level = levelForXp(prev.player.xp);
+    return {
+      state: prev,
+      events: {
+        xpGained: 0,
+        creditsGained: 0,
+        leveledUp: false,
+        newLevel: level,
+        newTitle: titleForLevel(level),
+        unlockedDistricts: [],
+        newAchievements: [],
+        newEquipment: [],
+      },
+    };
+  }
 
   const state: GameState = {
     player: { ...prev.player, achievements: [...prev.player.achievements], equipment: [...prev.player.equipment], equipped: [...prev.player.equipped], unlockedDistricts: [...prev.player.unlockedDistricts] },

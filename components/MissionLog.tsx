@@ -30,7 +30,9 @@ export default function MissionLog({ state, selectedId, onSelect }: MissionLogPr
       const done = state.missions[m.id]?.status === 'done';
       if (status === 'done' && !done) return false;
       if (status === 'open' && done) return false;
-      if (!isMissionPlayable(state, m)) return false;
+      // Completed missions are history: they skip the playability check so
+      // the All view and the Done filter can actually show them.
+      if (!done && !isMissionPlayable(state, m)) return false;
       return true;
     }).sort((a, b) => {
       const da = state.missions[a.id]?.status === 'done' ? 1 : 0;
