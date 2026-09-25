@@ -61,15 +61,32 @@ export default function GameShell() {
 
   useEffect(() => {
     let cancelled = false;
+    let removeGestureListeners: (() => void) | null = null;
     gameStore.load().then(({ state: loaded, mode: m }) => {
       if (cancelled) return;
       setState(loaded);
       setMode(m);
       setMuted(loaded.player.muted);
-      if (!loaded.player.splashSeen) setShowSplash(true);
+      if (!loaded.player.splashSeen) {
+        setShowSplash(true);
+      } else if (!loaded.player.muted) {
+        // Returning player: browsers need a user gesture before audio can
+        // start, so kick off the ambient drone on the first interaction.
+        const startOnGesture = () => {
+          startAmbient();
+          removeGestureListeners?.();
+        };
+        removeGestureListeners = () => {
+          window.removeEventListener('pointerdown', startOnGesture);
+          window.removeEventListener('keydown', startOnGesture);
+        };
+        window.addEventListener('pointerdown', startOnGesture);
+        window.addEventListener('keydown', startOnGesture);
+      }
     });
     return () => {
       cancelled = true;
+      removeGestureListeners?.();
     };
   }, []);
 
@@ -81,9 +98,10 @@ export default function GameShell() {
     }, 3600);
   }, []);
 
-  const persist = useCallback((next: GameState) => {
-    setState(next);
-    gameStore.save(next);
+  const persist = useCallback((next: GameState): GameState => {
+    const stamped = gameStore.save(next);
+    setState(stamped);
+    return stamped;
   }, []);
 
   const gmPick = useMemo(
@@ -115,10 +133,15 @@ export default function GameShell() {
     (missionId: string) => {
       const mission = missionById(missionId);
       if (!mission) return;
+      // Guard: the handler can fire twice before React re-renders (double
+      // click), so check the current status and update the ref synchronously.
+      // completeMission is also idempotent as a second line of defense.
+      if (stateRef.current.missions[missionId]?.status === 'done') return;
       const { state: next, events } = applyCompletion(stateRef.current, missionId);
+      stateRef.current = next;
       setSelectedMissionId(null);
-      persist(next);
-      void gameStore.flushNow(next);
+      const stamped = persist(next);
+      void gameStore.flushNow(stamped);
 
       sfxVictory();
       if (mission.type === 'boss') window.setTimeout(() => sfxBossDown(), 500);
@@ -139,7 +162,10 @@ export default function GameShell() {
     };
     setMuted(next.player.muted);
     persist(next);
-    if (!next.player.muted) sfxBlip();
+    if (!next.player.muted) {
+      startAmbient(); // setMuted stopped the drone; restart it on unmute
+      sfxBlip();
+    }
   }, [persist]);
 
   const handleEquip = useCallback(

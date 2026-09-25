@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ensureTables, isDbConfigured, readMissionProgress, writeMissionProgress } from '@/lib/db';
 import type { MissionProgress } from '@/lib/game';
+import { getPlayerId, missingPlayerId } from '@/lib/playerAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,15 +14,19 @@ function unavailable() {
 
 const VALID_STATUS = new Set(['locked', 'available', 'active', 'done']);
 
-export async function GET() {
+export async function GET(req: Request) {
   if (!isDbConfigured()) return unavailable();
+  const playerId = getPlayerId(req);
+  if (!playerId) return missingPlayerId();
   await ensureTables();
-  const data = await readMissionProgress();
+  const data = await readMissionProgress(playerId);
   return NextResponse.json(data);
 }
 
 export async function PUT(req: Request) {
   if (!isDbConfigured()) return unavailable();
+  const playerId = getPlayerId(req);
+  if (!playerId) return missingPlayerId();
   await ensureTables();
   const body = (await req.json()) as {
     mission_id?: unknown;
@@ -45,6 +50,6 @@ export async function PUT(req: Request) {
     stepsDone,
     completedAt,
   };
-  await writeMissionProgress(missionId, progress);
+  await writeMissionProgress(playerId, missionId, progress);
   return NextResponse.json({ ok: true });
 }

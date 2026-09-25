@@ -36,10 +36,17 @@ Copy `.env.example` to `.env.local` and fill in `POSTGRES_URL` to enable cloud s
   is set. API routes: `GET`+`PUT /api/state` (player: xp, level, credits, streaks,
   unlocks, achievements, equipment, mute pref), `GET`+`PUT /api/missions`
   (per-mission progress: status, steps done), `GET`+`PUT /api/intel`
-  (intel gap clarifications). Tables are created automatically on first use.
+  (intel gap clarifications). Tables are created automatically on first use
+  (once per server instance). Every request must carry the browser's
+  `x-player-id` header: a random per-browser id that scopes cloud saves to
+  their owner without a login system.
 - **Local** (browser `localStorage`): full fallback, game fully playable single-device.
 
-Writes are debounced; mission completions flush immediately. The HUD shows
+Writes are debounced and only send records that changed since the last
+acknowledged flush; all flushes run through one serial queue so an older
+snapshot can never overwrite a newer one. On load, the copy with the higher
+save sequence wins, so a stale cloud save can never clobber newer local
+progress. Mission completions flush immediately. The HUD shows
 `cloud save` or `local save` so the active mode is always visible.
 
 ### Migrations
