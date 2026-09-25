@@ -35,6 +35,7 @@ export async function PUT(req: Request) {
     steps_done?: unknown;
     completedAt?: unknown;
     completed_at?: unknown;
+    saveSeq?: unknown;
   };
   const missionId = typeof body.mission_id === 'string' ? body.mission_id : '';
   const status = typeof body.status === 'string' && VALID_STATUS.has(body.status) ? body.status : 'available';
@@ -45,11 +46,17 @@ export async function PUT(req: Request) {
   if (!missionId) {
     return NextResponse.json({ ok: false, error: 'mission_id required' }, { status: 400 });
   }
+  // The save sequence this flush was stamped with; the write is rejected
+  // when a newer tab already saved, so a background tab can't clobber it.
+  const saveSeq = typeof body.saveSeq === 'number' ? body.saveSeq : -1;
   const progress: MissionProgress = {
     status: status as MissionProgress['status'],
     stepsDone,
     completedAt,
   };
-  await writeMissionProgress(playerId, missionId, progress);
+  const result = await writeMissionProgress(playerId, missionId, progress, saveSeq);
+  if (result === 'stale') {
+    return NextResponse.json({ ok: false, error: 'stale-write' }, { status: 409 });
+  }
   return NextResponse.json({ ok: true });
 }

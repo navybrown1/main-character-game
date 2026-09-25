@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { ensureTables, isDbConfigured, readPlayerState, writePlayerState } from '@/lib/db';
-import { defaultPlayerState } from '@/lib/game';
 import { getPlayerId, missingPlayerId } from '@/lib/playerAuth';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +17,10 @@ export async function GET(req: Request) {
   if (!playerId) return missingPlayerId();
   await ensureTables();
   const data = await readPlayerState(playerId);
-  return NextResponse.json(data ?? defaultPlayerState());
+  // null when this player has no cloud row yet. The client distinguishes
+  // "no row" from "an empty row" so a fresh cloud account never wipes local
+  // progress on a save-sequence tie.
+  return NextResponse.json(data);
 }
 
 export async function PUT(req: Request) {
@@ -37,6 +39,11 @@ export async function PUT(req: Request) {
   for (const key of allowed) {
     if (key in body) clean[key] = body[key];
   }
-  await writePlayerState(playerId, clean);
+  const result = await writePlayerState(playerId, clean);
+  if (result === 'stale') {
+    // A newer tab already saved a higher save sequence; the caller should
+    // rebase instead of overwriting it.
+    return NextResponse.json({ ok: false, error: 'stale-write' }, { status: 409 });
+  }
   return NextResponse.json({ ok: true });
 }

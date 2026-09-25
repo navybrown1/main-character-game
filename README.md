@@ -52,12 +52,21 @@ progress. Mission completions flush immediately. The HUD shows
 ### Migrations
 
 ```bash
-npm run db:migrate   # psql "$POSTGRES_URL" -f db/migrations/001_init.sql
+npm run db:migrate   # 001_init.sql then 002_player_id.sql
 ```
 
-Tables: `player_state` (single row, id = 1), `mission_progress`
-(mission_id PK, status, steps_done JSONB, completed_at), `intel_resolutions`
-(gap_id PK, clarification).
+Tables, all keyed by `player_id` (the random per-browser id the client sends
+as `x-player-id`): `player_state` (`player_id` PK, `data` JSONB),
+`mission_progress` (`player_id`, `mission_id` composite PK, status, steps_done
+JSONB, completed_at), `intel_resolutions` (`player_id`, `gap_id` composite PK,
+clarification).
+
+Upgrading from the original singleton schema (pre-player-id): the app
+migrates old tables in place automatically on boot, and
+`db/migrations/002_player_id.sql` does the same for operators running psql by
+hand. The old saves were global singletons with no player identity, so their
+rows are preserved under the `legacy-singleton` player id: kept in the
+database, never served to clients.
 
 ## Deploy to Vercel
 
@@ -79,7 +88,7 @@ Tables: `player_state` (single row, id = 1), `mission_progress`
 - `lib/db.ts` - server-only Postgres access
 - `lib/audio.ts` - Web Audio synthesized SFX (zero external audio files)
 - `public/assets/` - hero portrait, key art, world map
-- `db/migrations/001_init.sql` - schema
+- `db/migrations/001_init.sql` - schema (002_player_id.sql migrates pre-player-id databases)
 
 ## Game rules worth knowing
 
